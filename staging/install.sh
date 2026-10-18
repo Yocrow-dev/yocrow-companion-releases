@@ -26,7 +26,7 @@ if command -v sha256sum >/dev/null 2>&1; then sha="sha256sum"
 elif command -v shasum >/dev/null 2>&1; then sha="shasum -a 256"
 else fail "sha256sum or shasum is required"; fi
 
-tag="${YOCROW_VERSION:-$(curl -fsSL "$CHANNEL_URL/latest")}" || fail "could not resolve the latest version"
+tag="${YOCROW_VERSION:-$(curl -fsSL "$CHANNEL_URL/latest.txt")}" || fail "could not resolve the latest version"
 tag="v${tag#v}"
 archive="${ARCHIVE_PREFIX}_${tag#v}_${os}_${arch}.tar.gz"
 

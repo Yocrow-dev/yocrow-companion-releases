@@ -30,7 +30,7 @@ if ($env:YOCROW_ARCH) {
     }
 }
 
-$tag = if ($env:YOCROW_VERSION) { $env:YOCROW_VERSION } else { (Invoke-RestMethod "$ChannelUrl/latest").Trim() }
+$tag = if ($env:YOCROW_VERSION) { $env:YOCROW_VERSION } else { (Invoke-RestMethod "$ChannelUrl/latest.txt").Trim() }
 $tag = 'v' + $tag.TrimStart('v')
 $archive = "${ArchivePrefix}_$($tag.TrimStart('v'))_windows_$arch.zip"
 

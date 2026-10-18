@@ -18,6 +18,22 @@ irm https://get.yocrow.dev/staging/install.ps1 | iex
 
 Then run `yocrow login`.
 
+## Production
+
+Available after the first production release.
+
+macOS and Linux
+
+```sh
+curl -fsSL https://get.yocrow.dev/production/install.sh | sh
+```
+
+Windows PowerShell
+
+```powershell
+irm https://get.yocrow.dev/production/install.ps1 | iex
+```
+
 ## Options
 
 | Variable | Purpose |
