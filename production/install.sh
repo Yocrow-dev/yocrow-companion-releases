@@ -47,8 +47,41 @@ mkdir -p "$INSTALL_DIR"
 install -m 0755 "$tmp/yocrow" "$INSTALL_DIR/yocrow"
 
 echo "Installed $("$INSTALL_DIR/yocrow" --version 2>/dev/null || echo yocrow) to $INSTALL_DIR/yocrow"
-case ":$PATH:" in
-  *":$INSTALL_DIR:"*) ;;
-  *) echo "Add $INSTALL_DIR to your PATH, for example: export PATH=\"$INSTALL_DIR:\$PATH\"" ;;
-esac
+
+# Persist INSTALL_DIR on PATH in the user's shell profile, idempotently.
+add_to_path() {
+  case ":$PATH:" in *":$INSTALL_DIR:"*) return 0 ;; esac
+  line="export PATH=\"$INSTALL_DIR:\$PATH\""
+  if [ "${YOCROW_NO_MODIFY_PATH:-}" = 1 ]; then
+    echo "Skipped PATH setup. Add this to your shell profile: $line"
+    return 0
+  fi
+  case "${SHELL##*/}" in
+    zsh) files="$HOME/.zshrc" ;;
+    bash)
+      files=""
+      for f in "$HOME/.bashrc" "$HOME/.bash_profile"; do
+        if [ -f "$f" ]; then files="$files $f"; fi
+      done
+      files="${files:-$HOME/.profile}"
+      ;;
+    fish)
+      files="${XDG_CONFIG_HOME:-$HOME/.config}/fish/config.fish"
+      line="fish_add_path \"$INSTALL_DIR\""
+      mkdir -p "${files%/*}"
+      ;;
+    *) files="$HOME/.profile" ;;
+  esac
+  # ponytail: unquoted split, so profile paths with spaces are not supported.
+  for f in $files; do
+    if grep -qsF "$line" "$f"; then
+      echo "PATH already set in $f"
+    else
+      printf '\n# Added by the Yocrow installer\n%s\n' "$line" >>"$f"
+      echo "Added $INSTALL_DIR to PATH in $f"
+    fi
+  done
+  echo "Open a new terminal to use yocrow, or source $f"
+}
+add_to_path
 echo "Next, run: yocrow login"

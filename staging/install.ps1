@@ -58,10 +58,15 @@ try {
 }
 
 $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-if (($userPath -split ';') -notcontains $InstallDir) {
-    [Environment]::SetEnvironmentVariable('Path', "$InstallDir;$userPath", 'User')
-    $env:Path = "$InstallDir;$env:Path"
+if ($env:YOCROW_NO_MODIFY_PATH -eq '1') {
+    Write-Host "Skipped PATH setup. Add $InstallDir to your user PATH to run yocrow from any terminal."
+} elseif (($userPath -split ';') -notcontains $InstallDir) {
+    $newPath = if ($userPath) { "$InstallDir;$userPath" } else { $InstallDir }
+    [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
     Write-Host "Added $InstallDir to your user PATH. Open a new terminal to use it everywhere."
+}
+if ($env:YOCROW_NO_MODIFY_PATH -ne '1' -and ($env:Path -split ';') -notcontains $InstallDir) {
+    $env:Path = "$InstallDir;$env:Path"
 }
 Write-Host "Installed $(& (Join-Path $InstallDir 'yocrow.exe') --version) to $InstallDir"
 Write-Host 'Next, run: yocrow login'
