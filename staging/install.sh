@@ -7,6 +7,11 @@ CHANNEL_URL="${YOCROW_CHANNEL_URL:-https://get.yocrow.dev/staging}"
 DOWNLOAD_URL="${YOCROW_DOWNLOAD_URL:-https://github.com/Yocrow-dev/yocrow-companion-releases/releases/download}"
 ARCHIVE_PREFIX="yocrow-staging"
 INSTALL_DIR="${YOCROW_INSTALL_DIR:-$HOME/.local/bin}"
+# Base64 SubjectPublicKeyInfo DER of the ECDSA P-256 key that signs checksums.txt.
+CHECKSUMS_PUBLIC_KEY=""
+if [ "${YOCROW_INSTALL_DEV:-}" = 1 ]; then
+  CHECKSUMS_PUBLIC_KEY="${YOCROW_CHECKSUMS_PUBLIC_KEY:-$CHECKSUMS_PUBLIC_KEY}"
+fi
 
 fail() { echo "yocrow install: $*" >&2; exit 1; }
 
@@ -22,6 +27,8 @@ case "$(uname -m)" in
 esac
 
 command -v curl >/dev/null 2>&1 || fail "curl is required"
+command -v openssl >/dev/null 2>&1 || fail "openssl is required"
+[ -n "$CHECKSUMS_PUBLIC_KEY" ] || fail "this installer has no checksums signing key"
 if command -v sha256sum >/dev/null 2>&1; then sha="sha256sum"
 elif command -v shasum >/dev/null 2>&1; then sha="shasum -a 256"
 else fail "sha256sum or shasum is required"; fi
@@ -36,6 +43,9 @@ trap 'rm -rf "$tmp"' EXIT
 echo "Downloading Yocrow Companion $tag for $os/$arch"
 curl -fsSL -o "$tmp/$archive" "$DOWNLOAD_URL/$tag/$archive" || fail "download failed for $archive"
 curl -fsSL -o "$tmp/checksums.txt" "$DOWNLOAD_URL/$tag/checksums.txt" || fail "checksum download failed"
+curl -fsSL -o "$tmp/checksums.txt.sig" "$DOWNLOAD_URL/$tag/checksums.txt.sig" || fail "checksum signature download failed"
+{ printf '%s\n' '-----BEGIN PUBLIC KEY-----'; printf '%s' "$CHECKSUMS_PUBLIC_KEY" | fold -w 64; printf '\n%s\n' '-----END PUBLIC KEY-----'; } >"$tmp/checksums-key.pem"
+openssl dgst -sha256 -verify "$tmp/checksums-key.pem" -signature "$tmp/checksums.txt.sig" "$tmp/checksums.txt" >/dev/null 2>&1 || fail "checksums signature is invalid"
 
 expected="$(awk -v f="$archive" '$2 == f { print $1 }' "$tmp/checksums.txt")"
 [ -n "$expected" ] || fail "no checksum listed for $archive"

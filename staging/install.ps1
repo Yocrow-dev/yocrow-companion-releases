@@ -9,6 +9,49 @@ $ChannelUrl = if ($env:YOCROW_CHANNEL_URL) { $env:YOCROW_CHANNEL_URL } else { 'h
 $DownloadUrl = if ($env:YOCROW_DOWNLOAD_URL) { $env:YOCROW_DOWNLOAD_URL } else { 'https://github.com/Yocrow-dev/yocrow-companion-releases/releases/download' }
 $InstallDir = if ($env:YOCROW_INSTALL_DIR) { $env:YOCROW_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA 'Yocrow\bin' }
 $ArchivePrefix = 'yocrow-staging'
+# Base64 SubjectPublicKeyInfo DER of the ECDSA P-256 key that signs checksums.txt.
+$ChecksumsPublicKey = ''
+if ($env:YOCROW_INSTALL_DEV -eq '1' -and $env:YOCROW_CHECKSUMS_PUBLIC_KEY) { $ChecksumsPublicKey = $env:YOCROW_CHECKSUMS_PUBLIC_KEY }
+if (-not $ChecksumsPublicKey) { throw 'This installer has no checksums signing key' }
+
+function Read-DerInteger([byte[]]$der, [ref]$pos) {
+    if ($der[$pos.Value] -ne 0x02) { throw 'Checksums signature is invalid' }
+    $len = [int]$der[$pos.Value + 1]
+    if ($len -gt 33 -or $len -lt 1) { throw 'Checksums signature is invalid' }
+    $start = $pos.Value + 2
+    $pos.Value = $start + $len
+    if ($pos.Value -gt $der.Length) { throw 'Checksums signature is invalid' }
+    $value = [byte[]]$der[$start..($pos.Value - 1)]
+    $skip = 0
+    while ($skip -lt $value.Length - 1 -and $value[$skip] -eq 0) { $skip++ }
+    $value = [byte[]]$value[$skip..($value.Length - 1)]
+    if ($value.Length -gt 32) { throw 'Checksums signature is invalid' }
+    $out = New-Object byte[] 32
+    [Array]::Copy($value, 0, $out, 32 - $value.Length, $value.Length)
+    return $out
+}
+
+# openssl writes DER, .NET verifies IEEE P1363 (r||s).
+function Test-ChecksumsSignature([byte[]]$data, [byte[]]$der, [string]$keyBase64) {
+    $spki = [Convert]::FromBase64String($keyBase64)
+    $prefix = '3059301306072a8648ce3d020106082a8648ce3d030107034200'
+    if ($spki.Length -ne 91 -or (($spki[0..25] | ForEach-Object { $_.ToString('x2') }) -join '') -ne $prefix -or $spki[26] -ne 0x04) {
+        throw 'Embedded checksums signing key is not a P-256 public key'
+    }
+    if ($der.Length -lt 8 -or $der[0] -ne 0x30 -or $der[1] -ne $der.Length - 2) { throw 'Checksums signature is invalid' }
+    $pos = 2
+    $r = Read-DerInteger $der ([ref]$pos)
+    $s = Read-DerInteger $der ([ref]$pos)
+    if ($pos -ne $der.Length) { throw 'Checksums signature is invalid' }
+    $point = New-Object Security.Cryptography.ECPoint
+    $point.X = [byte[]]$spki[27..58]
+    $point.Y = [byte[]]$spki[59..90]
+    $p = New-Object Security.Cryptography.ECParameters
+    $p.Curve = [Security.Cryptography.ECCurve+NamedCurves]::nistP256
+    $p.Q = $point
+    $ecdsa = [Security.Cryptography.ECDsa]::Create($p)
+    try { return $ecdsa.VerifyData($data, [byte[]]($r + $s), [Security.Cryptography.HashAlgorithmName]::SHA256) } finally { $ecdsa.Dispose() }
+}
 
 # CIM reports the real CPU even inside x64-emulated PowerShell, where PROCESSOR_ARCHITECTURE lies.
 if ($env:YOCROW_ARCH) {
@@ -41,6 +84,10 @@ try {
     Invoke-WebRequest "$DownloadUrl/$tag/$archive" -OutFile (Join-Path $tmp $archive) -UseBasicParsing
     Invoke-WebRequest "$DownloadUrl/$tag/checksums.txt" -OutFile (Join-Path $tmp 'checksums.txt') -UseBasicParsing
 
+    Invoke-WebRequest "$DownloadUrl/$tag/checksums.txt.sig" -OutFile (Join-Path $tmp 'checksums.txt.sig') -UseBasicParsing
+    $checksumBytes = [IO.File]::ReadAllBytes((Join-Path $tmp 'checksums.txt'))
+    $signatureBytes = [IO.File]::ReadAllBytes((Join-Path $tmp 'checksums.txt.sig'))
+    if (-not (Test-ChecksumsSignature $checksumBytes $signatureBytes $ChecksumsPublicKey)) { throw 'Checksums signature is invalid' }
     $line = Get-Content (Join-Path $tmp 'checksums.txt') | Where-Object { ($_ -split '\s+')[1] -eq $archive }
     if (-not $line) { throw "No checksum listed for $archive" }
     $expected = ($line -split '\s+')[0]
