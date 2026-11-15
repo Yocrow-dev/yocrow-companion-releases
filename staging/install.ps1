@@ -14,7 +14,7 @@ if ($DevInstall -and $env:YOCROW_DOWNLOAD_URL) { $DownloadUrl = $env:YOCROW_DOWN
 $InstallDir = if ($env:YOCROW_INSTALL_DIR) { $env:YOCROW_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA 'Yocrow\bin' }
 $ArchivePrefix = 'yocrow-staging'
 # Base64 SubjectPublicKeyInfo DER of the ECDSA P-256 key that signs checksums.txt.
-$ChecksumsPublicKey = ''
+$ChecksumsPublicKey = 'MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEyD+nFkAMtSQJq6seRrWT/QBEnOYel27utmnqS5g7fHvm+xy7QgfTlRlBrCVcohbLux+w0CCApSkumHE430UQlw=='
 if ($DevInstall -and $env:YOCROW_CHECKSUMS_PUBLIC_KEY) { $ChecksumsPublicKey = $env:YOCROW_CHECKSUMS_PUBLIC_KEY }
 if (-not $ChecksumsPublicKey) { throw 'This installer has no checksums signing key' }
 

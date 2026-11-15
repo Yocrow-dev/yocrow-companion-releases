@@ -8,7 +8,7 @@ DOWNLOAD_URL="https://github.com/Yocrow-dev/yocrow-companion-releases/releases/d
 ARCHIVE_PREFIX="yocrow-staging"
 INSTALL_DIR="${YOCROW_INSTALL_DIR:-$HOME/.local/bin}"
 # Base64 SubjectPublicKeyInfo DER of the ECDSA P-256 key that signs checksums.txt.
-CHECKSUMS_PUBLIC_KEY=""
+CHECKSUMS_PUBLIC_KEY="MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEyD+nFkAMtSQJq6seRrWT/QBEnOYel27utmnqS5g7fHvm+xy7QgfTlRlBrCVcohbLux+w0CCApSkumHE430UQlw=="
 # URL and key overrides are for local testing only.
 if [ "${YOCROW_INSTALL_DEV:-}" = 1 ]; then
   CHANNEL_URL="${YOCROW_CHANNEL_URL:-$CHANNEL_URL}"
