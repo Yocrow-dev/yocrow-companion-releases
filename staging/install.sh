@@ -3,13 +3,16 @@
 #   curl -fsSL https://get.yocrow.dev/staging/install.sh | sh
 set -eu
 
-CHANNEL_URL="${YOCROW_CHANNEL_URL:-https://get.yocrow.dev/staging}"
-DOWNLOAD_URL="${YOCROW_DOWNLOAD_URL:-https://github.com/Yocrow-dev/yocrow-companion-releases/releases/download}"
+CHANNEL_URL="https://get.yocrow.dev/staging"
+DOWNLOAD_URL="https://github.com/Yocrow-dev/yocrow-companion-releases/releases/download"
 ARCHIVE_PREFIX="yocrow-staging"
 INSTALL_DIR="${YOCROW_INSTALL_DIR:-$HOME/.local/bin}"
 # Base64 SubjectPublicKeyInfo DER of the ECDSA P-256 key that signs checksums.txt.
 CHECKSUMS_PUBLIC_KEY=""
+# URL and key overrides are for local testing only.
 if [ "${YOCROW_INSTALL_DEV:-}" = 1 ]; then
+  CHANNEL_URL="${YOCROW_CHANNEL_URL:-$CHANNEL_URL}"
+  DOWNLOAD_URL="${YOCROW_DOWNLOAD_URL:-$DOWNLOAD_URL}"
   CHECKSUMS_PUBLIC_KEY="${YOCROW_CHECKSUMS_PUBLIC_KEY:-$CHECKSUMS_PUBLIC_KEY}"
 fi
 
@@ -35,6 +38,24 @@ else fail "sha256sum or shasum is required"; fi
 
 tag="${YOCROW_VERSION:-$(curl -fsSL "$CHANNEL_URL/latest.txt")}" || fail "could not resolve the latest version"
 tag="v${tag#v}"
+VERSION_PATTERN='[0-9]+\.[0-9]+\.[0-9]+(-staging\.[0-9]+)?'
+valid_version() { [ "$(printf '%s\n' "$1" | wc -l)" -eq 1 ] && printf '%s' "$1" | grep -Eq "^${VERSION_PATTERN}\$"; }
+valid_version "${tag#v}" || fail "invalid version tag from the release channel"
+# Prints "major minor patch release staging" so a final release ranks above its staging builds.
+version_key() {
+  printf '%s' "$1" | sed -E 's/^([0-9]+)\.([0-9]+)\.([0-9]+)(-staging\.([0-9]+))?$/\1 \2 \3 \5/' |
+    awk '{ if ($4 == "") print $1, $2, $3, 1, 0; else print $1, $2, $3, 0, $4 }'
+}
+if [ -z "${YOCROW_VERSION:-}" ] && [ -x "$INSTALL_DIR/yocrow" ]; then
+  installed="$("$INSTALL_DIR/yocrow" version 2>/dev/null | head -n 1 | tr -d '\r' || true)"
+  installed="${installed#v}"
+  if valid_version "$installed"; then
+    older="$( { version_key "$installed"; version_key "${tag#v}"; } | awk '
+      NR == 1 { for (i = 1; i <= 5; i++) a[i] = $i + 0; next }
+      { for (i = 1; i <= 5; i++) { b = $i + 0; if (b < a[i]) { print 1; exit } if (b > a[i]) { print 0; exit } } print 0 }')"
+    [ "$older" = 0 ] || fail "refusing to downgrade from $installed to ${tag#v}. Set YOCROW_VERSION to install an older version"
+  fi
+fi
 archive="${ARCHIVE_PREFIX}_${tag#v}_${os}_${arch}.tar.gz"
 
 tmp="$(mktemp -d)"

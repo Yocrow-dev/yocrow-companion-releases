@@ -5,13 +5,17 @@ $ProgressPreference = 'SilentlyContinue'
 # Windows PowerShell 5.1 may default to older TLS, which GitHub refuses.
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
-$ChannelUrl = if ($env:YOCROW_CHANNEL_URL) { $env:YOCROW_CHANNEL_URL } else { 'https://get.yocrow.dev/staging' }
-$DownloadUrl = if ($env:YOCROW_DOWNLOAD_URL) { $env:YOCROW_DOWNLOAD_URL } else { 'https://github.com/Yocrow-dev/yocrow-companion-releases/releases/download' }
+$ChannelUrl = 'https://get.yocrow.dev/staging'
+$DownloadUrl = 'https://github.com/Yocrow-dev/yocrow-companion-releases/releases/download'
+# URL and key overrides are for local testing only.
+$DevInstall = $env:YOCROW_INSTALL_DEV -eq '1'
+if ($DevInstall -and $env:YOCROW_CHANNEL_URL) { $ChannelUrl = $env:YOCROW_CHANNEL_URL }
+if ($DevInstall -and $env:YOCROW_DOWNLOAD_URL) { $DownloadUrl = $env:YOCROW_DOWNLOAD_URL }
 $InstallDir = if ($env:YOCROW_INSTALL_DIR) { $env:YOCROW_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA 'Yocrow\bin' }
 $ArchivePrefix = 'yocrow-staging'
 # Base64 SubjectPublicKeyInfo DER of the ECDSA P-256 key that signs checksums.txt.
 $ChecksumsPublicKey = ''
-if ($env:YOCROW_INSTALL_DEV -eq '1' -and $env:YOCROW_CHECKSUMS_PUBLIC_KEY) { $ChecksumsPublicKey = $env:YOCROW_CHECKSUMS_PUBLIC_KEY }
+if ($DevInstall -and $env:YOCROW_CHECKSUMS_PUBLIC_KEY) { $ChecksumsPublicKey = $env:YOCROW_CHECKSUMS_PUBLIC_KEY }
 if (-not $ChecksumsPublicKey) { throw 'This installer has no checksums signing key' }
 
 function Read-DerInteger([byte[]]$der, [ref]$pos) {
@@ -75,6 +79,27 @@ if ($env:YOCROW_ARCH) {
 
 $tag = if ($env:YOCROW_VERSION) { $env:YOCROW_VERSION } else { (Invoke-RestMethod "$ChannelUrl/latest.txt").Trim() }
 $tag = 'v' + $tag.TrimStart('v')
+$VersionPattern = '\A([0-9]+)\.([0-9]+)\.([0-9]+)(?:-staging\.([0-9]+))?\z'
+if ($tag.Substring(1) -notmatch $VersionPattern) { throw 'Invalid version tag from the release channel' }
+# A final release ranks above its staging builds.
+function Get-VersionKey([string]$version) {
+    if ($version -notmatch $VersionPattern) { return $null }
+    $release = if ($Matches[4]) { 0 } else { 1 }
+    $staging = if ($Matches[4]) { [long]$Matches[4] } else { 0 }
+    return @([long]$Matches[1], [long]$Matches[2], [long]$Matches[3], $release, $staging)
+}
+$installedExe = Join-Path $InstallDir 'yocrow.exe'
+if (-not $env:YOCROW_VERSION -and (Test-Path $installedExe -PathType Leaf)) {
+    $installed = try { "$(& $installedExe version 2>$null | Select-Object -First 1)".Trim().TrimStart('v') } catch { '' }
+    $old = Get-VersionKey $installed
+    $new = Get-VersionKey $tag.Substring(1)
+    if ($old) {
+        for ($i = 0; $i -lt 5; $i++) {
+            if ($new[$i] -gt $old[$i]) { break }
+            if ($new[$i] -lt $old[$i]) { throw "Refusing to downgrade from $installed to $($tag.Substring(1)). Set YOCROW_VERSION to install an older version" }
+        }
+    }
+}
 $archive = "${ArchivePrefix}_$($tag.TrimStart('v'))_windows_$arch.zip"
 
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ([Guid]::NewGuid())
